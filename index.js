@@ -180,7 +180,7 @@ async function fetchAndProcess() {
     const nowDate = new Date();
     c += 1;
     // Prepare app-level document (id'd by recipient email) to track status and metrics
-    if (c == 15) {
+    if (c == 1500) {
       const appDocRef = db.collection("app").doc("emailer");
       try {
         await appDocRef.set(
