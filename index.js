@@ -186,6 +186,7 @@ async function fetchAndProcess() {
         await appDocRef.set(
           {
             emailsSent: emails,
+            status: "running",
             scriptLastRuntime: admin.firestore.Timestamp.fromDate(new Date()),
           },
           { merge: true }
