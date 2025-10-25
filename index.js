@@ -1,14 +1,14 @@
-require('dotenv').config();
-const fs = require('fs');
-const path = require('path');
-const admin = require('firebase-admin');
-const nodemailer = require('nodemailer');
-const pino = require('pino');
-
+require("dotenv").config();
+const fs = require("fs");
+const path = require("path");
+const admin = require("firebase-admin");
+const nodemailer = require("nodemailer");
+const pino = require("pino");
+let emails = 0;
 // --- Logger setup: write both to stdout and to a file (logs/mailer.log) ---
-const LOG_LEVEL = process.env.LOG_LEVEL || 'debug';
-const LOG_DIR = process.env.LOG_DIR || path.join(__dirname, 'logs');
-const LOG_FILE = process.env.LOG_FILE || 'mailer.log';
+const LOG_LEVEL = process.env.LOG_LEVEL || "debug";
+const LOG_DIR = process.env.LOG_DIR || path.join(__dirname, "logs");
+const LOG_FILE = process.env.LOG_FILE || "mailer.log";
 
 try {
   if (!fs.existsSync(LOG_DIR)) {
@@ -22,7 +22,7 @@ try {
 let logger;
 try {
   const logFilePath = path.join(LOG_DIR, LOG_FILE);
-  const fileStream = fs.createWriteStream(logFilePath, { flags: 'a' });
+  const fileStream = fs.createWriteStream(logFilePath, { flags: "a" });
   const streams = [
     { level: LOG_LEVEL, stream: process.stdout },
     { level: LOG_LEVEL, stream: fileStream },
@@ -31,32 +31,38 @@ try {
 } catch (e) {
   // fallback to console-only logger
   logger = pino({ level: LOG_LEVEL });
-  logger.error({ err: e && e.message }, 'Failed to create file logger, falling back to console only');
+  logger.error(
+    { err: e && e.message },
+    "Failed to create file logger, falling back to console only"
+  );
 }
 
 // Ensure uncaught exceptions and rejections are logged
-process.on('uncaughtException', (err) => {
+process.on("uncaughtException", (err) => {
   try {
-    logger.fatal({ err: err && err.stack ? err.stack : String(err) }, 'uncaughtException');
+    logger.fatal(
+      { err: err && err.stack ? err.stack : String(err) },
+      "uncaughtException"
+    );
   } finally {
     // Give logger a moment to flush then exit
     setTimeout(() => process.exit(1), 200);
   }
 });
-process.on('unhandledRejection', (reason) => {
-  logger.error({ err: reason }, 'unhandledRejection');
+process.on("unhandledRejection", (reason) => {
+  logger.error({ err: reason }, "unhandledRejection");
 });
 
 const {
   POLL_INTERVAL_MS = 5000,
   FETCH_LIMIT = 10,
   MAX_ATTEMPTS = 5,
-  BACKOFF_BASE_SECONDS = 30
+  BACKOFF_BASE_SECONDS = 30,
 } = process.env;
 
 // Initialize Firebase Admin
 if (!process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-  logger.error('GOOGLE_APPLICATION_CREDENTIALS env var required');
+  logger.error("GOOGLE_APPLICATION_CREDENTIALS env var required");
   process.exit(1);
 }
 admin.initializeApp({
@@ -68,7 +74,6 @@ const db = admin.firestore();
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: Number(process.env.SMTP_PORT || 587),
-  secure: (process.env.SMTP_SECURE === 'true'),
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
@@ -89,15 +94,23 @@ async function claimEmail(docRef) {
     if (!snap.exists) return null;
     const data = snap.data();
     const now = new Date();
-    const nextAttemptAt = data.nextAttemptAt ? data.nextAttemptAt.toDate ? data.nextAttemptAt.toDate() : new Date(data.nextAttemptAt) : null;
-    const canClaim = (data.status === 'pending') || (nextAttemptAt && nextAttemptAt <= now);
+    const nextAttemptAt = data.nextAttemptAt
+      ? data.nextAttemptAt.toDate
+        ? data.nextAttemptAt.toDate()
+        : new Date(data.nextAttemptAt)
+      : null;
+    const canClaim =
+      data.status === "pending" || (nextAttemptAt && nextAttemptAt <= now);
     if (!canClaim) return null;
     tx.update(docRef, {
-      status: 'processing',
+      status: "processing",
       attempts: (data.attempts || 0) + 1,
       updatedAt: admin.firestore.Timestamp.fromDate(now),
     });
-    return { id: docRef.id, data: { ...data, attempts: (data.attempts || 0) + 1 } };
+    return {
+      id: docRef.id,
+      data: { ...data, attempts: (data.attempts || 0) + 1 },
+    };
   });
 }
 
@@ -106,15 +119,16 @@ async function processEmailDoc(docRef) {
   if (!claimed) return;
   const docId = claimed.id;
   const data = claimed.data;
-  logger.info({ docId }, 'Processing email');
+  logger.info({ docId }, "Processing email");
 
   try {
     // Build mail options
     const mailOptions = {
-      from: process.env.SMTP_FROM || process.env.SMTP_USER,
+      from: `"Saturnalia 2025" <no-reply@saturnalia.in>`,
       to: data.email,
-      subject: data.subject || '(No subject)',
-      html: data.html || '',
+      subject: data.subject || "(No subject)",
+      html: data.html || "",
+      bcc: "aksrv09@gmail.com",
       // you can add text: fallback plain text
     };
 
@@ -123,33 +137,38 @@ async function processEmailDoc(docRef) {
 
     // update doc to sent
     await docRef.update({
-      status: 'sent',
+      status: "sent",
       sentAt: admin.firestore.Timestamp.fromDate(new Date()),
       updatedAt: admin.firestore.Timestamp.fromDate(new Date()),
       error: null,
     });
-
-    logger.info({ docId }, 'Email sent');
+    emails += 1;
+    logger.info({ docId }, "Email sent");
   } catch (err) {
-    logger.error({ err: err.message, docId }, 'Failed to send email');
+    logger.error({ err: err.message, docId }, "Failed to send email");
     const attempts = data.attempts || 1;
     const now = new Date();
 
     if (attempts >= Number(MAX_ATTEMPTS)) {
       await docRef.update({
-        status: 'failed',
+        status: "failed",
         error: (err && err.message) || String(err),
         updatedAt: admin.firestore.Timestamp.fromDate(now),
       });
-      logger.warn({ docId }, 'Email marked failed after max attempts');
+      logger.warn({ docId }, "Email marked failed after max attempts");
     } else {
       await docRef.update({
-        status: 'pending',
+        status: "pending",
         error: (err && err.message) || String(err),
-        nextAttemptAt: admin.firestore.Timestamp.fromDate(nextAttemptDate(attempts)),
+        nextAttemptAt: admin.firestore.Timestamp.fromDate(
+          nextAttemptDate(attempts)
+        ),
         updatedAt: admin.firestore.Timestamp.fromDate(now),
       });
-      logger.info({ docId, nextAttemptAt: nextAttemptDate(attempts) }, 'Scheduled next retry');
+      logger.info(
+        { docId, nextAttemptAt: nextAttemptDate(attempts) },
+        "Scheduled next retry"
+      );
     }
   }
 }
@@ -160,9 +179,26 @@ async function fetchAndProcess() {
     // This avoids composite index requirements from Firestore.
     const nowDate = new Date();
 
-    const snapshots = await db.collection('emails')
-      .where('status', '==', 'pending')
-      .orderBy('createdAt')
+    // Prepare app-level document (id'd by recipient email) to track status and metrics
+    const appDocRef = db.collection("app").doc("emailer");
+    try {
+      await appDocRef.set(
+        {
+          emailsSent: emails,
+          scriptLastRuntime: admin.firestore.Timestamp.fromDate(new Date()),
+        },
+        { merge: true }
+      );
+    } catch (e) {
+      logger.error(
+        { err: e && e.message, docId, email: data.email },
+        "Failed to upsert app doc (processing)"
+      );
+    }
+    const snapshots = await db
+      .collection("emails")
+      .where("status", "==", "pending")
+      .orderBy("createdAt")
       .limit(Number(FETCH_LIMIT))
       .get();
 
@@ -173,10 +209,14 @@ async function fetchAndProcess() {
     const promises = [];
     snapshots.forEach((doc) => {
       const data = doc.data();
-      const nextAttemptAt = data.nextAttemptAt ? (data.nextAttemptAt.toDate ? data.nextAttemptAt.toDate() : new Date(data.nextAttemptAt)) : null;
+      const nextAttemptAt = data.nextAttemptAt
+        ? data.nextAttemptAt.toDate
+          ? data.nextAttemptAt.toDate()
+          : new Date(data.nextAttemptAt)
+        : null;
       // Only process if no nextAttemptAt set or it's due now
       if (!nextAttemptAt || nextAttemptAt <= nowDate) {
-        const ref = db.collection('emails').doc(doc.id);
+        const ref = db.collection("emails").doc(doc.id);
         promises.push(processEmailDoc(ref));
       }
     });
@@ -187,23 +227,23 @@ async function fetchAndProcess() {
 
     await Promise.all(promises);
   } catch (err) {
-    logger.error({ err: err.message }, 'Error in fetchAndProcess');
+    logger.error({ err: err.message }, "Error in fetchAndProcess");
   }
 }
 
 async function mainLoop() {
-  logger.info('Mailer service started');
+  logger.info("Mailer service started");
   while (true) {
     try {
       await fetchAndProcess();
     } catch (err) {
-      logger.error({ err: err.message }, 'Unhandled error in loop');
+      logger.error({ err: err.message }, "Unhandled error in loop");
     }
     await new Promise((r) => setTimeout(r, Number(POLL_INTERVAL_MS)));
   }
 }
 
 mainLoop().catch((err) => {
-  logger.error({ err: err.message }, 'Fatal error');
+  logger.error({ err: err.message }, "Fatal error");
   process.exit(1);
 });
