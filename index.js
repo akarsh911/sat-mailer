@@ -172,29 +172,33 @@ async function processEmailDoc(docRef) {
     }
   }
 }
-
+let c = 0;
 async function fetchAndProcess() {
   try {
     // Simpler query: fetch a batch of pending docs and filter nextAttemptAt in code.
     // This avoids composite index requirements from Firestore.
     const nowDate = new Date();
-
+    c += 1;
     // Prepare app-level document (id'd by recipient email) to track status and metrics
-    const appDocRef = db.collection("app").doc("emailer");
-    try {
-      await appDocRef.set(
-        {
-          emailsSent: emails,
-          scriptLastRuntime: admin.firestore.Timestamp.fromDate(new Date()),
-        },
-        { merge: true }
-      );
-    } catch (e) {
-      logger.error(
-        { err: e && e.message, docId, email: data.email },
-        "Failed to upsert app doc (processing)"
-      );
+    if (c == 15) {
+      const appDocRef = db.collection("app").doc("emailer");
+      try {
+        await appDocRef.set(
+          {
+            emailsSent: emails,
+            scriptLastRuntime: admin.firestore.Timestamp.fromDate(new Date()),
+          },
+          { merge: true }
+        );
+      } catch (e) {
+        logger.error(
+          { err: e && e.message, docId, email: data.email },
+          "Failed to upsert app doc (processing)"
+        );
+      }
+      c = 0;
     }
+
     const snapshots = await db
       .collection("emails")
       .where("status", "==", "pending")
