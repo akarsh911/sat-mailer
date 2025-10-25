@@ -249,5 +249,9 @@ async function mainLoop() {
 
 mainLoop().catch((err) => {
   logger.error({ err: err.message }, "Fatal error");
+  db.collection("app").doc("emailer").update({
+    status: "failed",
+    error: (err && err.message) || String(err),
+  });
   process.exit(1);
 });
