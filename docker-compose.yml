@@ -1,0 +1,17 @@
+version: "3.9"
+
+services:
+  mailer:
+    build: .
+    container_name: mailer_service
+    restart: always
+    env_file: .env
+    volumes:
+      - ./serviceAccountKey.json:/usr/src/app/serviceAccountKey.json:ro
+      # Persist application-generated logs on the host so they survive container restarts
+      - ./logs:/usr/src/app/logs
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
