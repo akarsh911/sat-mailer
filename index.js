@@ -83,7 +83,7 @@ const transporter = nodemailer.createTransport({
 // helper: compute next attempt timestamp
 function nextAttemptDate(attempts) {
   const base = Number(BACKOFF_BASE_SECONDS || 30);
-  const delay = Math.min(60 * 60 * 24, Math.pow(2, attempts) * base); // cap 24h
+  const delay = Math.min(60 * 60 * 2, Math.pow(2, attempts) * base); // cap 24h
   return new Date(Date.now() + delay * 1000);
 }
 
