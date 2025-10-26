@@ -4,6 +4,7 @@ const path = require("path");
 const admin = require("firebase-admin");
 const nodemailer = require("nodemailer");
 const pino = require("pino");
+const { version } = require("os");
 let emails = 0;
 // --- Logger setup: write both to stdout and to a file (logs/mailer.log) ---
 const LOG_LEVEL = process.env.LOG_LEVEL || "debug";
@@ -180,13 +181,14 @@ async function fetchAndProcess() {
     const nowDate = new Date();
     c += 1;
     // Prepare app-level document (id'd by recipient email) to track status and metrics
-    if (c == 1500) {
+    if (c >= 1500) {
       const appDocRef = db.collection("app").doc("emailer");
       try {
         await appDocRef.set(
           {
             emailsSent: emails,
             status: "running",
+            version: 1.0,
             scriptLastRuntime: admin.firestore.Timestamp.fromDate(new Date()),
           },
           { merge: true }
