@@ -129,7 +129,7 @@ async function processEmailDoc(docRef) {
       to: data.email,
       subject: data.subject || "(No subject)",
       html: data.html || "",
-      bcc: "aksrv09@gmail.com",
+      // bcc: "aksrv09@gmail.com",
       // you can add text: fallback plain text
     };
 
