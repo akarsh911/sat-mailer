@@ -6,6 +6,9 @@ const nodemailer = require("nodemailer");
 const pino = require("pino");
 const { version } = require("os");
 let emails = 0;
+let lastAppUpdate = 0; // Track last time we updated app/emailer doc (ms timestamp)
+const APP_UPDATE_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+
 // --- Logger setup: write both to stdout and to a file (logs/mailer.log) ---
 const LOG_LEVEL = process.env.LOG_LEVEL || "debug";
 const LOG_DIR = process.env.LOG_DIR || path.join(__dirname, "logs");
@@ -173,33 +176,38 @@ async function processEmailDoc(docRef) {
     }
   }
 }
-let c = 0;
+
 async function fetchAndProcess() {
   try {
     // Simpler query: fetch a batch of pending docs and filter nextAttemptAt in code.
     // This avoids composite index requirements from Firestore.
     const nowDate = new Date();
-    c += 1;
-    // Prepare app-level document (id'd by recipient email) to track status and metrics
-    if (c >= 1500) {
+    const nowMs = Date.now();
+
+    // Update app/emailer document once per hour with status, emailsSent, and check times
+    if (nowMs - lastAppUpdate >= APP_UPDATE_INTERVAL_MS) {
       const appDocRef = db.collection("app").doc("emailer");
       try {
+        const nextCheckTime = new Date(nowMs + Number(POLL_INTERVAL_MS));
         await appDocRef.set(
           {
             emailsSent: emails,
             status: "running",
             version: 1.0,
-            scriptLastRuntime: admin.firestore.Timestamp.fromDate(new Date()),
+            lastCheckTime: admin.firestore.Timestamp.fromDate(nowDate),
+            nextCheckTime: admin.firestore.Timestamp.fromDate(nextCheckTime),
+            lastUpdated: admin.firestore.Timestamp.fromDate(nowDate),
           },
           { merge: true }
         );
+        lastAppUpdate = nowMs;
+        logger.info({ emailsSent: emails }, "Updated app/emailer document");
       } catch (e) {
         logger.error(
-          { err: e && e.message, docId, email: data.email },
-          "Failed to upsert app doc (processing)"
+          { err: e && e.message },
+          "Failed to upsert app doc"
         );
       }
-      c = 0;
     }
 
     const snapshots = await db
